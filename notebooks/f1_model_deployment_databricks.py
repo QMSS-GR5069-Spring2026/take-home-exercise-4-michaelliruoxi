@@ -34,12 +34,11 @@ from sklearn.model_selection import train_test_split
 # MAGIC %md
 # MAGIC ## Configuration
 # MAGIC
-# MAGIC `CATALOG_NAME` and `DATABASE_NAME` are set to my assigned Unity Catalog location for the assignment. The path `/Volumes/gr5069/rl3592/...` shows that my personal database/schema is `rl3592` in the `gr5069` catalog.
+# MAGIC `DATABASE_NAME` is set to my own database/schema name for the assignment. If the course workspace uses a different assigned database name, update this one value before running the notebook.
 
 # COMMAND ----------
 
-CATALOG_NAME = "gr5069"
-DATABASE_NAME = "rl3592"
+DATABASE_NAME = "michaelliruoxi"
 VOLUME_PATH = "/Volumes/gr5069/raw/f1_data"
 DATASET_PATH = f"{VOLUME_PATH}/results.csv"
 
@@ -65,15 +64,11 @@ TEST_SIZE = 0.2
 # COMMAND ----------
 
 def qualified_table(table_name):
-    return f"`{CATALOG_NAME}`.`{DATABASE_NAME}`.`{table_name}`"
+    return f"`{DATABASE_NAME}`.`{table_name}`"
 
 
-def table_path(table_name):
-    return f"{CATALOG_NAME}.{DATABASE_NAME}.{table_name}"
-
-
-spark.sql(f"USE CATALOG `{CATALOG_NAME}`")
-spark.sql(f"USE SCHEMA `{DATABASE_NAME}`")
+spark.sql(f"CREATE DATABASE IF NOT EXISTS `{DATABASE_NAME}`")
+spark.sql(f"USE `{DATABASE_NAME}`")
 
 for table_name in [RF_TABLE_NAME, GB_TABLE_NAME]:
     spark.sql(
@@ -94,7 +89,7 @@ for table_name in [RF_TABLE_NAME, GB_TABLE_NAME]:
         """
     )
 
-display(spark.sql(f"SHOW TABLES IN `{CATALOG_NAME}`.`{DATABASE_NAME}`"))
+display(spark.sql(f"SHOW TABLES IN `{DATABASE_NAME}`"))
 
 # COMMAND ----------
 
@@ -324,7 +319,7 @@ def save_predictions_to_table(predictions_output, table_name):
     spark_predictions = spark.createDataFrame(predictions_output)
     spark.sql(f"DELETE FROM {qualified_table(table_name)}")
     spark_predictions.write.mode("append").format("delta").saveAsTable(
-        table_path(table_name)
+        f"{DATABASE_NAME}.{table_name}"
     )
 
 
@@ -348,7 +343,7 @@ for spec in model_specs:
         mlflow.log_param("dataset_path", DATASET_PATH)
         mlflow.log_param("target_column", TARGET_COLUMN)
         mlflow.log_param("feature_columns", ", ".join(feature_columns))
-        mlflow.log_param("prediction_table", table_path(spec["table_name"]))
+        mlflow.log_param("prediction_table", f"{DATABASE_NAME}.{spec['table_name']}")
         mlflow.log_metrics({key: value for key, value in metrics.items() if pd.notna(value)})
 
         signature = infer_signature(X_train.head(5), model.predict(X_train.head(5)))
@@ -374,7 +369,7 @@ for spec in model_specs:
         run_record = {
             "run_id": run.info.run_id,
             "model_name": model_name,
-            "prediction_table": table_path(spec["table_name"]),
+            "prediction_table": f"{DATABASE_NAME}.{spec['table_name']}",
             **metrics,
         }
         run_results.append(run_record)
@@ -382,7 +377,7 @@ for spec in model_specs:
         print(f"Finished {model_name}")
         print(f"  run_id: {run.info.run_id}")
         print(f"  f1: {metrics['f1']:.4f}")
-        print(f"  prediction table: {table_path(spec['table_name'])}")
+        print(f"  prediction table: {DATABASE_NAME}.{spec['table_name']}")
 
 # COMMAND ----------
 
@@ -408,8 +403,8 @@ print(
 display(spark.sql(f"SELECT COUNT(*) AS prediction_rows FROM {qualified_table(RF_TABLE_NAME)}"))
 display(spark.sql(f"SELECT COUNT(*) AS prediction_rows FROM {qualified_table(GB_TABLE_NAME)}"))
 
-display(spark.table(table_path(RF_TABLE_NAME)).limit(20))
-display(spark.table(table_path(GB_TABLE_NAME)).limit(20))
+display(spark.table(f"{DATABASE_NAME}.{RF_TABLE_NAME}").limit(20))
+display(spark.table(f"{DATABASE_NAME}.{GB_TABLE_NAME}").limit(20))
 
 # COMMAND ----------
 

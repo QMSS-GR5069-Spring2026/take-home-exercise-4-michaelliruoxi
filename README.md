@@ -55,17 +55,17 @@ Both runs also log multiple artifacts:
 
 ## Database Tables
 
-The notebook creates and writes to these tables in my database/schema:
+The notebook creates and writes to these tables in my database:
 
-- `gr5069.rl3592.f1_random_forest_podium_predictions`
-- `gr5069.rl3592.f1_gradient_boosting_podium_predictions`
+- `michaelliruoxi.f1_random_forest_podium_predictions`
+- `michaelliruoxi.f1_gradient_boosting_podium_predictions`
 
-This database/schema comes from my personal course volume path: `/Volumes/gr5069/rl3592/inclass/...`.
+If the Databricks workspace uses a different assigned database name, update `DATABASE_NAME` at the top of the notebook before running.
 
 ## How To Run
 
 1. Import `notebooks/f1_model_deployment_databricks.py` into Databricks.
-2. Confirm `CATALOG_NAME = "gr5069"` and `DATABASE_NAME = "rl3592"` match the assigned database/schema.
+2. Confirm `DATABASE_NAME = "michaelliruoxi"` matches the assigned database/schema.
 3. Run the notebook from top to bottom.
 4. Open the MLflow experiment named `/Users/<your-databricks-user>/f1-homework-5-model-deployment`.
 5. Take screenshots of the MLflow experiment/runs and the notebook cells showing the prediction tables.
