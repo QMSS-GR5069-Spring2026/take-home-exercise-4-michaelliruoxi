@@ -15,6 +15,7 @@ import mlflow
 import mlflow.sklearn
 import numpy as np
 import pandas as pd
+
 from mlflow.models import infer_signature
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.metrics import (
@@ -34,11 +35,12 @@ from sklearn.model_selection import train_test_split
 # MAGIC %md
 # MAGIC ## Configuration
 # MAGIC
-# MAGIC `DATABASE_NAME` is set to my own database/schema name for the assignment. If the course workspace uses a different assigned database name, update this one value before running the notebook.
+# MAGIC `CATALOG_NAME` and `DATABASE_NAME` are set to my assigned Unity Catalog location for the assignment. The path `/Volumes/gr5069/rl3592/...` shows that my personal database/schema is `rl3592` in the `gr5069` catalog.
 
 # COMMAND ----------
 
-DATABASE_NAME = "michaelliruoxi"
+CATALOG_NAME = "gr5069"
+DATABASE_NAME = "rl3592"
 VOLUME_PATH = "/Volumes/gr5069/raw/f1_data"
 DATASET_PATH = f"{VOLUME_PATH}/results.csv"
 
@@ -64,11 +66,15 @@ TEST_SIZE = 0.2
 # COMMAND ----------
 
 def qualified_table(table_name):
-    return f"`{DATABASE_NAME}`.`{table_name}`"
+    return f"`{CATALOG_NAME}`.`{DATABASE_NAME}`.`{table_name}`"
 
 
-spark.sql(f"CREATE DATABASE IF NOT EXISTS `{DATABASE_NAME}`")
-spark.sql(f"USE `{DATABASE_NAME}`")
+def table_path(table_name):
+    return f"{CATALOG_NAME}.{DATABASE_NAME}.{table_name}"
+
+
+spark.sql(f"USE CATALOG `{CATALOG_NAME}`")
+spark.sql(f"USE SCHEMA `{DATABASE_NAME}`")
 
 for table_name in [RF_TABLE_NAME, GB_TABLE_NAME]:
     spark.sql(
@@ -89,7 +95,7 @@ for table_name in [RF_TABLE_NAME, GB_TABLE_NAME]:
         """
     )
 
-display(spark.sql(f"SHOW TABLES IN `{DATABASE_NAME}`"))
+display(spark.sql(f"SHOW TABLES IN `{CATALOG_NAME}`.`{DATABASE_NAME}`"))
 
 # COMMAND ----------
 
@@ -315,12 +321,30 @@ def log_artifacts(model, predictions_output, y_true, predictions, model_name):
         mlflow.log_artifacts(temp_dir, artifact_path="artifacts")
 
 
+from pyspark.sql.functions import col
+
 def save_predictions_to_table(predictions_output, table_name):
     spark_predictions = spark.createDataFrame(predictions_output)
+
+    spark_predictions = (
+        spark_predictions
+        .withColumn("resultId", col("resultId").cast("bigint"))
+        .withColumn("raceId", col("raceId").cast("bigint"))
+        .withColumn("driverId", col("driverId").cast("bigint"))
+        .withColumn("constructorId", col("constructorId").cast("bigint"))
+        .withColumn("run_id", col("run_id").cast("string"))
+        .withColumn("model_name", col("model_name").cast("string"))
+        .withColumn("actual_podium_finish", col("actual_podium_finish").cast("int"))
+        .withColumn("predicted_podium_finish", col("predicted_podium_finish").cast("int"))
+        .withColumn("podium_probability", col("podium_probability").cast("double"))
+        .withColumn("prediction_created_at", col("prediction_created_at").cast("timestamp"))
+    )
+
     spark.sql(f"DELETE FROM {qualified_table(table_name)}")
     spark_predictions.write.mode("append").format("delta").saveAsTable(
-        f"{DATABASE_NAME}.{table_name}"
+        table_path(table_name)
     )
+
 
 
 run_results = []
@@ -343,7 +367,7 @@ for spec in model_specs:
         mlflow.log_param("dataset_path", DATASET_PATH)
         mlflow.log_param("target_column", TARGET_COLUMN)
         mlflow.log_param("feature_columns", ", ".join(feature_columns))
-        mlflow.log_param("prediction_table", f"{DATABASE_NAME}.{spec['table_name']}")
+        mlflow.log_param("prediction_table", table_path(spec["table_name"]))
         mlflow.log_metrics({key: value for key, value in metrics.items() if pd.notna(value)})
 
         signature = infer_signature(X_train.head(5), model.predict(X_train.head(5)))
@@ -369,7 +393,7 @@ for spec in model_specs:
         run_record = {
             "run_id": run.info.run_id,
             "model_name": model_name,
-            "prediction_table": f"{DATABASE_NAME}.{spec['table_name']}",
+            "prediction_table": table_path(spec["table_name"]),
             **metrics,
         }
         run_results.append(run_record)
@@ -377,7 +401,7 @@ for spec in model_specs:
         print(f"Finished {model_name}")
         print(f"  run_id: {run.info.run_id}")
         print(f"  f1: {metrics['f1']:.4f}")
-        print(f"  prediction table: {DATABASE_NAME}.{spec['table_name']}")
+        print(f"  prediction table: {table_path(spec['table_name'])}")
 
 # COMMAND ----------
 
@@ -403,12 +427,5 @@ print(
 display(spark.sql(f"SELECT COUNT(*) AS prediction_rows FROM {qualified_table(RF_TABLE_NAME)}"))
 display(spark.sql(f"SELECT COUNT(*) AS prediction_rows FROM {qualified_table(GB_TABLE_NAME)}"))
 
-display(spark.table(f"{DATABASE_NAME}.{RF_TABLE_NAME}").limit(20))
-display(spark.table(f"{DATABASE_NAME}.{GB_TABLE_NAME}").limit(20))
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Submission Notes
-# MAGIC
-# MAGIC For the GitHub submission, include this notebook and screenshots of the two MLflow runs. The notebook output above documents the two prediction tables and identifies the best model by F1 score.
+display(spark.table(table_path(RF_TABLE_NAME)).limit(20))
+display(spark.table(table_path(GB_TABLE_NAME)).limit(20))
